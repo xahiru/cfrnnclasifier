@@ -14,11 +14,16 @@ import random
 torch.manual_seed(1)
 testuserange = 7
 
-df_t = pd.read_csv("/Users/xahiru/Code/paper/mf/pytorch-tutorials/images/tiny_training2.csv")
+# df_t = pd.read_csv("/Users/xahiru/Code/paper/mf/pytorch-tutorials/images/tiny_training2.csv")
 # df_t = pd.read_csv("/Users/xahiru/Code/paper/agree/agreerecom/data/ml-100k/u.data").head(500)
 
-# df_t = pd.read_table('/Users/xahiru/Code/paper/agree/agreerecom/data/ml-100k/u.data', sep='\t', names=['userId', 'movieId', 'rating', 'timestamp']).head(2000)
+df_t = pd.read_table('/Users/xahiru/Code/paper/agree/agreerecom/data/ml-100k/u.data', sep='\t', names=['userId', 'movieId', 'rating', 'timestamp']).head(2000)
 
+model_type_basic_lstm = 1
+model_type_basic_lstm_plus_trust = 2
+model_type_random = 3
+
+model_type = model_type_basic_lstm
 
 
 def prepare_sequence(user_movies, to_ix):
@@ -115,12 +120,12 @@ u_it_index = []
 n_users = training_data_df.userId.nunique()
 n_items = training_data_df.movieId.nunique()
 ratings = np.zeros((n_users, n_items))
-print('ratings.shape')
-print(ratings.shape)
-print('>>>>>>training_data_df.userId')
-print(training_data_df.userId.nunique())
-print('>>>>>>training_data_df.movieId')
-print(training_data_df.movieId.nunique())
+# print('ratings.shape')
+# print(ratings.shape)
+# print('>>>>>>training_data_df.userId')
+# print(training_data_df.userId.nunique())
+# print('>>>>>>training_data_df.movieId')
+# print(training_data_df.movieId.nunique())
 for index, row in training_data_df.iterrows():
     # print(row.userId)
     ratings[int(row.userId),int(row.movieId)] = int(row.rating)#TODO rating could be float
@@ -165,37 +170,7 @@ tagset_size = 5 #Rating ranges from 1-5, TODO test including 0 in the range
 EMBEDDING_DIM = 64
 HIDDEN_DIM = 32
 
-# targets = prepare_sequence_new([4,5], tag_to_ix)
 
-# print("targets = prepare_sequence_new")
-# print(targets)
-# print(tag_to_ix[4])
-
-# for k, l in u_it_index:
-#     print(k)
-#     print(l)
-# def get_trusted_ratings(user_movie_list, user):
-#     trusted_rating_list = []
-#         # print('========= get_trusted_ratings=========')
-#     for x in user_movie_list:
-#         # print('========= get_trusted_ratings |loop=========')
-#         # print(self.ratings[user,x])
-#         checkzero = trust_values[x]
-#         if(checkzero==0):
-#             # print(checkzero)
-#             non_zero_items = np.nonzero(ratings)
-#             # print(self.ratings[non_zero_items[0],non_zero_items[1]])
-#             r = random.choice(self.ratings[non_zero_items[0],non_zero_items[1]])
-#         else:
-#             r = ratings[user,x]
-#             if(r==0):
-#                 item = ratings[:,x]
-#                 item_r = item[np.nonzero(item)]
-#                 r = round(np.sum(item_r)/len(item_r))
-#         r = tag_to_ix[r]
-#         # print(r)        
-#         trusted_rating_list.append(r)
-#     return torch.tensor(trusted_rating_list, dtype=torch.long)
 
 
 class LSTMTagger(nn.Module):
@@ -206,7 +181,8 @@ class LSTMTagger(nn.Module):
 
     
         self.word_embeddings = nn.Embedding(unique_items_size, embedding_dim)
-        self.trust_embeddings = nn.Embedding(tagset_size, tagset_size)
+        # self.trust_embeddings = nn.Embedding(tagset_size, tagset_size)
+        
 
         self.trust_matrix = trust_matrix
         self.trust_indices = np.argmax(trust_matrix, axis=0)
@@ -214,54 +190,37 @@ class LSTMTagger(nn.Module):
         self.ratings = ratings
         self.tag_to_ix = tag_to_ix
 
-        # self.out_embeddings = nn.Embedding(unique_items_size, embedding_dim)
+        if model_type == model_type_basic_lstm_plus_trust:
+            self.trust_embeddings = nn.Embedding(tagset_size, embedding_dim)
+            self.lstm = nn.LSTM(embedding_dim+embedding_dim, hidden_dim)
+        else if model_type == model_type_basic_lstm:
+            self.lstm = nn.LSTM(embedding_dim, hidden_dim)
 
-        # The LSTM takes word embeddings as inputs, and outputs hidden states
-        # with dimensionality hidden_dim.
-        # self.trustlstm = nn.LSTM(embedding_dim, hidden_dim)
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim)
-        # self.lstm2 = nn.LSTM(hidden_dim, hidden_dim)
-        # self.lstm3 = nn.LSTM(hidden_dim, hidden_dim)
-        # self.lstm4 = nn.LSTM(hidden_dim, hidden_dim)
-        # self.lstm5 = nn.LSTM(hidden_dim, hidden_dim)
 
-        # The linear layer that maps from hidden state space to tag space
         self.hidden2tag = nn.Linear(hidden_dim, tagset_size)
         self.hidden = self.init_hidden()
-        # self.hidden2 = self.init_hidden()
-        # self.hidden3 = self.init_hidden()
-        # # self.hidden4 = self.init_hidden()
-        # self.hidden5 = self.init_hidden()
+
     def get_trusted_ratings(self, user_movie_list, user):
         trusted_rating_list = []
-        # print('========= get_trusted_ratings=========')
         for x in user_movie_list:
-            # print('========= get_trusted_ratings |loop=========')
-            # print(self.ratings[user,x])
             checkzero = self.trust_values[x]
-            if(checkzero==0):
-                # print(checkzero)
-                non_zero_items = np.nonzero(self.ratings)
-                # print(self.ratings[non_zero_items[0],non_zero_items[1]])
-                r = random.choice(self.ratings[non_zero_items[0],non_zero_items[1]])
-            else:
-                r = self.ratings[user,x]
-                if(r==0):
-                    item = self.ratings[:,x]
-                    item_r = item[np.nonzero(item)]
-                    r = round(np.sum(item_r)/len(item_r))
+            # if(checkzero==0):
+            #     non_zero_items = np.nonzero(self.ratings)
+            #     r = random.choice(self.ratings[non_zero_items[0],non_zero_items[1]])
+            # else:
+            r = self.ratings[user,x]
+            if(r==0):
+                item = self.ratings[:,x]
+                item_r = item[np.nonzero(item)]
+                r = round(np.sum(item_r)/len(item_r))
 
             r = self.tag_to_ix[r]
             # print(r)        
             trusted_rating_list.append(r)
-        return torch.tensor(trusted_rating_list, dtype=torch.long)
+        return torch.tensor(trusted_rating_list, dtype=torch.long), trusted_rating_list
         
 
     def init_hidden(self):
-        # Before we've done anything, we dont have any hidden state.
-        # Refer to the Pytorch documentation to see exactly
-        # why they have this dimensionality.
-        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
         return (torch.zeros(1, 1, self.hidden_dim),
                 torch.zeros(1, 1, self.hidden_dim))
 
@@ -274,39 +233,50 @@ class LSTMTagger(nn.Module):
         # print(self.trust_indices[items])
         # it = self.trust_indices[items]
         # print('get_trusted_ratings')
-        trusted_tags = self.get_trusted_ratings(self.trust_indices[items], user)
+        trusted_tags, trusted_rating_list = self.get_trusted_ratings(self.trust_indices[items], user)
 
-        print(sentence)
-        print(trusted_tags)
+        # print('sentence')
+        # print(sentence)
+        # print('trusted_rating_list')
+        # print(trusted_rating_list)
         embeds = self.word_embeddings(sentence)
-        with torch.no_grad():
-            embeds2 = self.trust_embeddings(trusted_tags)
+        # with torch.no_grad():
+        embeds2 = self.trust_embeddings(trusted_tags)
+            # y = torch.LongTensor(5,1).random_() % 5
+            # one_hot = torch.FloatTensor(5, 5).zero_()
+            # target = one_hot.scatter_(1, y,1)
+            # print('one hot target')
+            # print(one_hot)
+            # print(torch.exp(F.log_softmax(target, dim=1)))
+        lstm_in = torch.cat((embeds, embeds2), 0)
+        # print('embeds')
+        # print(embeds.size())
+        # print('embeds2')
+        # print(embeds2.size())
+        # print('lstm_in')
+        # print(lstm_in.size())
+
         # print("embeds size()")
         # print(embeds)
-        print('embeds2')
-        print(embeds2)
+        # print('embeds2')
+        # print(embeds2)
+
+
         lstm_out, self.hidden = self.lstm(
-            embeds.view(len(sentence), 1, -1), self.hidden)
-        # print("lstm_out")
-        # print(lstm_out.size())
-        # lstm_out2, self.hidden = self.lstm2(
-        #     lstm_out, self.hidden)
-        # lstm_out3, self.hidden = self.lstm3(
-        #     lstm_out2, self.hidden)
-        # lstm_out4, self.hidden4 = self.lstm4(
-        #     lstm_out3, self.hidden4)
-        # lstm_out5, self.hidden5 = self.lstm5(
-        #     lstm_out4, self.hidden5)
+            lstm_in.view(len(sentence), 1, -1), self.hidden)
+       
 
         tag_space = self.hidden2tag(lstm_out.view(len(sentence), -1))
-        print("tag_space")
-        # print(tag_space.size())
-        print(tag_space)
+        # print("tag_space")
+        # # print(tag_space.size())
+        # print(tag_space)
 
         # t_tag_space = F.log_softmax(embeds2,dim=1)
 
+        # tag_scores = F.log_softmax(tag_space, dim=1)
         tag_scores = F.log_softmax(tag_space, dim=1)
         # values, indices = torch.max(tag_scores,1)
+        # print(torch.exp(t_tag_space))
 
         # embeds = self.word_embeddings(indices)
         # lstm_out2, self.hidden2 = self.lstm2(
@@ -342,10 +312,7 @@ for epoch in range(30):  # again, normally you would NOT do 300 epochs, it is to
         # Also, we need to clear out the hidden state of the LSTM,
         # detaching it from its history on the last instance.
         model.hidden = model.init_hidden()
-        # model.hidden2 = model.init_hidden()
-        # model.hidden3 = model.init_hidden()
-        # model.hidden4 = model.init_hidden()
-        # model.hidden5 = model.init_hidden()
+        
 
         # Step 2. Get our inputs ready for the network, that is, turn them into
         # Tensors of word indices.
@@ -382,29 +349,3 @@ for epoch in range(30):  # again, normally you would NOT do 300 epochs, it is to
         u_index_count = u_index_count + 1
     print(loss)
 
-# for tu in range(testuserange):
-#     # print(u_it_index[tu][1])
-
-#     with torch.no_grad():
-#     #     # inputs = prepare_sequence(u_it_index[testuser][0], movies_to_ix)
-#         # x = tu + 495
-#         # print(u_it_index.size())
-#         inputs = torch.tensor(u_it_index[tu][0], dtype=torch.long)
-#         tag_scores = model(inputs)
-
-#         # #     # The sentence is "the dog ate the apple".  i,j corresponds to score for tag j
-#         # #     # for word i. The predicted tag is the maximum scoring tag.
-#         # #     # Here, we can see the predicted sequence below is 0 1 2 0 1
-#         # #     # since 0 is index of the maximum value of row 1,
-#         # #     # 1 is the index of maximum value of row 2, etc.
-#         # #     # Which is DET NOUN VERB DET NOUN, the correct sequence!
-#         print("==================")
-#         # print(tu)
-#         print("ORIGINAL RATINGS")
-#         print(u_it_index[tu][1])
-#         values, indices = torch.max(tag_scores,1)
-#         print("PREDICTIONS")
-#         print(indices.add(1))
-#             # print("================")
-#         # print(values)
-#         print(tag_scores)
